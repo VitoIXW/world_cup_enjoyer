@@ -47,9 +47,20 @@ python3 scripts/fifa_upcoming_matches.py --timezone Europe/Madrid
 Copia `.env.example` a `.env` y rellena:
 
 - `TELEGRAM_BOT_TOKEN`
-- `TELEGRAM_CHAT_ID`
+- `TELEGRAM_CHAT_ID` opcional, para sembrar tu chat inicial
 - `WORLD_CUP_TIMEZONE`
 - `WORLD_CUP_HOURS`
+
+El bot ahora mantiene suscriptores en archivos locales ignorados por Git:
+
+- `data/telegram_subscribers.json`
+- `data/telegram_state.json`
+
+Funcionamiento:
+
+- si alguien escribe `/start` al bot, se guarda su `chat_id`, nombre, username y `enabled=true`
+- si alguien escribe `/stop`, se mantiene registrado pero pasa a `enabled=false`
+- en cada ejecución el bot revisa primero nuevos mensajes y luego envía el resumen a todos los suscriptores activos
 
 Prueba sin enviar:
 
