@@ -155,6 +155,18 @@ def fit_font(draw: ImageDraw.ImageDraw, text: str, max_width: int, start_size: i
     return load_condensed_bold(22)
 
 
+def fit_multiline_font(draw: ImageDraw.ImageDraw, text: str, max_width: int, max_lines: int, start_size: int, min_size: int = 11):
+    size = start_size
+    while size >= min_size:
+        font = load_condensed_bold(size)
+        lines = wrap_multiline(draw, text, font, max_width, max_lines)
+        if lines and all(text_size(draw, line, font)[0] <= max_width for line in lines):
+            return font, lines
+        size -= 1
+    font = load_condensed_bold(min_size)
+    return font, wrap_multiline(draw, text, font, max_width, max_lines)
+
+
 def draw_glass_box(
     base: Image.Image,
     box: tuple[int, int, int, int],
@@ -550,19 +562,13 @@ def draw_match_card(base: Image.Image, draw: ImageDraw.ImageDraw, y: int, match,
 
     draw_location_icon(draw, 141, y + 148)
 
-    city_font = load_condensed_bold(16)
-    stadium_font = load_font(14)
-    city_lines = wrap_multiline(draw, (match.city or "").upper(), city_font, 154, 2)
-    city_y = y + 180
-    for line in city_lines:
-        centered_text(draw, 141, city_y, line, city_font, COLORS["white"])
-        city_y += 20
+    city_text = (match.city or "").upper()
+    stadium_text = (match.stadium or "").upper()
+    city_font, city_lines = fit_multiline_font(draw, city_text, 154, 2, 16, min_size=14)
+    stadium_font, stadium_lines = fit_multiline_font(draw, stadium_text, 154, 3, 14, min_size=11)
 
-    stadium_lines = wrap_multiline(draw, (match.stadium or "").upper(), stadium_font, 154, 2)
-    stadium_y = y + 226
-    for line in stadium_lines:
-        centered_text(draw, 141, stadium_y, line, stadium_font, COLORS["white"])
-        stadium_y += 18
+    draw_centered_lines(draw, 141, y + 168, y + 202, city_lines, city_font, COLORS["white"], 4)
+    draw_centered_lines(draw, 141, y + 198, y + 218, stadium_lines, stadium_font, COLORS["white"], 2)
 
     inner_left = 242
     inner_right = WIDTH - 42
@@ -602,6 +608,26 @@ def draw_location_icon(draw: ImageDraw.ImageDraw, x: int, y: int) -> None:
     draw.polygon([(x, y + 14), (x - 8, y - 2), (x + 8, y - 2)], fill=COLORS["white"])
 
 
+def draw_centered_lines(
+    draw: ImageDraw.ImageDraw,
+    x: int,
+    top: int,
+    bottom: int,
+    lines: list[str],
+    font,
+    fill: str,
+    line_gap: int,
+) -> None:
+    if not lines:
+        return
+    line_heights = [text_size(draw, line, font)[1] for line in lines]
+    total_height = sum(line_heights) + line_gap * (len(lines) - 1)
+    cursor_y = top + max(0, (bottom - top - total_height) // 2)
+    for line, line_height in zip(lines, line_heights):
+        centered_text(draw, x, cursor_y + line_height // 2, line, font, fill)
+        cursor_y += line_height + line_gap
+
+
 def wrap_multiline(draw: ImageDraw.ImageDraw, text: str, font, max_width: int, max_lines: int) -> list[str]:
     words = text.split()
     if not words:
@@ -618,8 +644,13 @@ def wrap_multiline(draw: ImageDraw.ImageDraw, text: str, font, max_width: int, m
             current = word
             if len(lines) == max_lines - 1:
                 break
-    remaining = current if len(lines) < max_lines else current
+    remaining = current
     lines.append(remaining)
+
+    leftover_words = words[len(" ".join(lines).split()) :]
+    if leftover_words:
+        suffix = " ".join(leftover_words)
+        lines[-1] = f"{lines[-1]} {suffix}".strip()
     return lines[:max_lines]
 
 
