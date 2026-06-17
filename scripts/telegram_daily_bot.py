@@ -87,6 +87,17 @@ def send_telegram_photo(token: str, chat_id: str, photo_path: Path, caption: str
         return json.load(response)
 
 
+def delete_telegram_message(token: str, chat_id: str, message_id: int) -> dict:
+    return telegram_api_request(
+        token,
+        "deleteMessage",
+        {
+            "chat_id": chat_id,
+            "message_id": message_id,
+        },
+    )
+
+
 def ensure_data_dir() -> None:
     DATA_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -111,11 +122,17 @@ def save_subscribers(payload: dict) -> None:
 
 
 def load_state() -> dict:
-    return load_json_file(STATE_FILE, {"last_update_id": 0})
+    return load_json_file(STATE_FILE, {"last_update_id": 0, "last_sent_messages": {}})
 
 
 def save_state(payload: dict) -> None:
     save_json_file(STATE_FILE, payload)
+
+
+def ensure_state_shape(state: dict) -> dict:
+    state.setdefault("last_update_id", 0)
+    state.setdefault("last_sent_messages", {})
+    return state
 
 
 def upsert_subscriber(subscribers: dict, chat_id: str, name: str, username: str | None, enabled: bool) -> None:
@@ -200,6 +217,35 @@ def enabled_chat_ids(subscribers: dict) -> list[str]:
     ]
 
 
+def delete_previous_daily_messages(token: str, state: dict, chat_id: str) -> None:
+    sent_map = state.setdefault("last_sent_messages", {})
+    previous_ids = sent_map.get(str(chat_id), [])
+    remaining_ids = []
+    for message_id in previous_ids:
+        try:
+            result = delete_telegram_message(token, str(chat_id), int(message_id))
+            if not result.get("ok", False):
+                description = result.get("description", "sin descripción")
+                print(f"No se pudo borrar chat_id={chat_id} message_id={message_id}: {description}")
+                remaining_ids.append(message_id)
+            else:
+                print(f"Mensaje borrado chat_id={chat_id} message_id={message_id}")
+        except Exception:
+            print(f"Error borrando chat_id={chat_id} message_id={message_id}")
+            remaining_ids.append(message_id)
+
+    if remaining_ids:
+        sent_map[str(chat_id)] = remaining_ids
+    else:
+        sent_map.pop(str(chat_id), None)
+
+
+def remember_sent_message(state: dict, chat_id: str, message_id: int) -> None:
+    sent_map = state.setdefault("last_sent_messages", {})
+    sent_map.setdefault(str(chat_id), [])
+    sent_map[str(chat_id)].append(int(message_id))
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(
         description="Envía por Telegram los próximos partidos del Mundial.",
@@ -245,7 +291,7 @@ def main() -> int:
 
     subscribers = load_subscribers()
     seed_primary_chat(subscribers, chat_id)
-    state = load_state()
+    state = ensure_state_shape(load_state())
     subscribers, state, synced = sync_subscribers_from_updates(token, subscribers, state)
     save_subscribers(subscribers)
     save_state(state)
@@ -265,15 +311,24 @@ def main() -> int:
 
     try:
         for recipient in recipients:
+            delete_previous_daily_messages(token, state, recipient)
+
             if args.send_mode in ("text", "both"):
                 result = send_telegram_message(token, recipient, message)
+                message_id = result.get("result", {}).get("message_id")
+                if message_id is not None:
+                    remember_sent_message(state, recipient, int(message_id))
                 print(f"Texto enviado a chat_id={recipient}")
                 print(json.dumps(result, ensure_ascii=False))
             if args.send_mode in ("image", "both"):
                 caption = None if args.send_mode == "image" else "Resumen visual del dia"
                 result = send_telegram_photo(token, recipient, image_path, caption=caption)
+                message_id = result.get("result", {}).get("message_id")
+                if message_id is not None:
+                    remember_sent_message(state, recipient, int(message_id))
                 print(f"Imagen enviada a chat_id={recipient}")
                 print(json.dumps(result, ensure_ascii=False))
+            save_state(state)
     finally:
         if image_path.exists():
             image_path.unlink()

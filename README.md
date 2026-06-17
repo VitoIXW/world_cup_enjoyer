@@ -62,6 +62,7 @@ Funcionamiento:
 - si alguien escribe `/start` al bot, se guarda su `chat_id`, nombre, username y `enabled=true`
 - si alguien escribe `/stop`, se mantiene registrado pero pasa a `enabled=false`
 - en cada ejecución el bot revisa primero nuevos mensajes y luego envía el resumen a todos los suscriptores activos
+- antes de enviar el resumen nuevo, el bot intenta borrar los últimos mensajes diarios que él mismo mandó en cada chat, para dejar solo el resumen actual
 
 Prueba sin enviar:
 
