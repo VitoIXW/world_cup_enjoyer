@@ -33,7 +33,7 @@ MATCH_CARD_HEIGHT = 246
 MATCH_CARD_GAP = 18
 TIME_BOX_WIDTH = 198
 RESAMPLE_LANCZOS = getattr(getattr(Image, "Resampling", Image), "LANCZOS")
-HEADER_CUP_PATH = Path(__file__).resolve().parent.parent / "tmp" / "copa.png"
+HEADER_CUP_PATH = Path(__file__).resolve().parent.parent / "tmp" / "copa2.png"
 STADIUM_BG_PATH = Path(__file__).resolve().parent.parent / "tmp" / "estadio.jpg"
 
 
@@ -92,6 +92,28 @@ FONT_VS = load_font(52, bold=True)
 FONT_FOOTER = load_font(19, bold=True)
 
 
+def load_condensed_bold(size: int) -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
+    candidates = [
+        "/usr/share/fonts/truetype/dejavu/DejaVuSansCondensed-Bold.ttf",
+        "/usr/share/fonts/truetype/liberation2/LiberationSans-Bold.ttf",
+    ]
+    for candidate in candidates:
+        if os.path.exists(candidate):
+            return ImageFont.truetype(candidate, size=size)
+    return load_font(size, bold=True)
+
+
+FONT_TITLE = load_condensed_bold(56)
+FONT_SUBTITLE = load_condensed_bold(28)
+FONT_DAY = load_condensed_bold(30)
+FONT_TIME = load_condensed_bold(42)
+FONT_CITY = load_condensed_bold(18)
+FONT_TEAM = load_condensed_bold(46)
+FONT_GROUP = load_condensed_bold(19)
+FONT_VS = load_condensed_bold(56)
+FONT_FOOTER = load_condensed_bold(19)
+
+
 def text_size(draw: ImageDraw.ImageDraw, text: str, font) -> tuple[int, int]:
     box = draw.textbbox((0, 0), text, font=font)
     return box[2] - box[0], box[3] - box[1]
@@ -102,15 +124,61 @@ def centered_text(draw: ImageDraw.ImageDraw, x: int, y: int, text: str, font, fi
     draw.text((x - w / 2, y - h / 2), text, font=font, fill=fill)
 
 
+def centered_text_with_shadow(
+    draw: ImageDraw.ImageDraw,
+    x: int,
+    y: int,
+    text: str,
+    font,
+    fill: str,
+    shadow_fill=(0, 0, 0, 180),
+    shadow_offset=(0, 3),
+) -> None:
+    w, h = text_size(draw, text, font)
+    draw.text(
+        (x - w / 2 + shadow_offset[0], y - h / 2 + shadow_offset[1]),
+        text,
+        font=font,
+        fill=shadow_fill,
+    )
+    draw.text((x - w / 2, y - h / 2), text, font=font, fill=fill)
+
+
 def fit_font(draw: ImageDraw.ImageDraw, text: str, max_width: int, start_size: int) -> ImageFont.ImageFont:
     size = start_size
     while size >= 22:
-        font = load_font(size, bold=True)
+        font = load_condensed_bold(size)
         width, _ = text_size(draw, text, font)
         if width <= max_width:
             return font
         size -= 2
-    return load_font(22, bold=True)
+    return load_condensed_bold(22)
+
+
+def draw_glass_box(
+    base: Image.Image,
+    box: tuple[int, int, int, int],
+    radius: int,
+    fill: tuple[int, int, int, int],
+    outline: tuple[int, int, int, int],
+    gloss_alpha: int = 24,
+    outline_width: int = 1,
+) -> None:
+    panel = Image.new("RGBA", (box[2] - box[0], box[3] - box[1]), (0, 0, 0, 0))
+    pd = ImageDraw.Draw(panel)
+    pd.rounded_rectangle(
+        (0, 0, panel.width - 1, panel.height - 1),
+        radius=radius,
+        fill=fill,
+        outline=outline,
+        width=outline_width,
+    )
+    pd.rounded_rectangle(
+        (6, 6, panel.width - 6, max(18, panel.height // 2 - 2)),
+        radius=max(8, radius - 8),
+        fill=(255, 255, 255, gloss_alpha),
+    )
+    base.alpha_composite(panel, (box[0], box[1]))
 
 
 def create_base(height: int) -> Image.Image:
@@ -288,6 +356,12 @@ def resize_cover(image: Image.Image, width: int, height: int) -> Image.Image:
     return resized.crop((left, top, left + width, top + height))
 
 
+def resize_contain(image: Image.Image, width: int, height: int) -> Image.Image:
+    scale = min(width / image.width, height / image.height)
+    new_size = (max(1, int(image.width * scale)), max(1, int(image.height * scale)))
+    return image.resize(new_size, RESAMPLE_LANCZOS)
+
+
 def rounded_mask(size: tuple[int, int], radius: int) -> Image.Image:
     mask = Image.new("L", size, 0)
     draw = ImageDraw.Draw(mask)
@@ -321,25 +395,31 @@ def draw_header(base: Image.Image, draw: ImageDraw.ImageDraw, hours: int, timezo
 
     cup = load_cup_asset()
     if cup is not None:
-        cup = resize_cover(cup, 156, 156)
-        shadow = Image.new("RGBA", cup.size, (0, 0, 0, 0))
+        cup = resize_contain(cup, 118, 158)
+        shadow = Image.new("RGBA", (cup.width + 10, cup.height + 10), (0, 0, 0, 0))
         shadow_draw = ImageDraw.Draw(shadow)
-        shadow_draw.ellipse((20, 118, 138, 150), fill=(0, 0, 0, 95))
+        shadow_draw.ellipse((18, cup.height - 18, shadow.width - 18, cup.height + 2), fill=(0, 0, 0, 95))
         shadow = shadow.filter(ImageFilter.GaussianBlur(12))
-        base.alpha_composite(shadow, (72, 52))
-        base.alpha_composite(cup, (70, 30))
+        cup_x = 86
+        cup_y = 28
+        base.alpha_composite(shadow, (cup_x - 8, cup_y + 10))
+        base.alpha_composite(cup, (cup_x, cup_y))
 
-    draw.text((230, 34), "MUNDIAL 2026", font=FONT_TITLE, fill=COLORS["white"])
-    draw.text((290, 106), "PRÓXIMOS PARTIDOS", font=FONT_SUBTITLE, fill=COLORS["gold"])
+    centered_text_with_shadow(draw, 504, 64, "MUNDIAL 2026", FONT_TITLE, COLORS["white"], shadow_offset=(0, 4))
+    centered_text_with_shadow(draw, 514, 116, "PRÓXIMOS PARTIDOS", FONT_SUBTITLE, COLORS["gold"], shadow_offset=(0, 3))
 
     pill_left = (68, 188, 414, 240)
     pill_right = (598, 188, 960, 240)
-    draw_pill(draw, pill_left, "VENTANA: PRÓXIMAS 24H")
-    draw_pill(draw, pill_right, f"HORARIO: {timezone_name.upper()}")
+    draw_pill(base, draw, pill_left, "VENTANA: PRÓXIMAS 24H")
+    draw_pill(base, draw, pill_right, f"HORARIO: {timezone_name.upper()}")
 
 
-def draw_pill(draw: ImageDraw.ImageDraw, box: tuple[int, int, int, int], text: str) -> None:
-    draw.rounded_rectangle(box, radius=19, outline=(215, 189, 126, 200), fill=(13, 17, 24, 190), width=2)
+def draw_pill(base: Image.Image, draw: ImageDraw.ImageDraw, box: tuple[int, int, int, int], text: str) -> None:
+    panel = Image.new("RGBA", (box[2] - box[0], box[3] - box[1]), (0, 0, 0, 0))
+    pd = ImageDraw.Draw(panel)
+    pd.rounded_rectangle((0, 0, panel.width - 1, panel.height - 1), radius=19, outline=(215, 189, 126, 210), fill=(14, 18, 25, 146), width=2)
+    pd.rounded_rectangle((6, 6, panel.width - 6, panel.height // 2), radius=14, fill=(255, 255, 255, 16))
+    base.alpha_composite(panel, (box[0], box[1]))
     draw.text((box[0] + 18, box[1] + 12), text, font=FONT_META, fill=COLORS["white"])
 
 
@@ -352,10 +432,27 @@ def draw_day_banner(base: Image.Image, draw: ImageDraw.ImageDraw, y: int, label:
         (right + 34, y),
         (right, y + DAY_BANNER_HEIGHT),
     ]
-    draw.polygon(poly, fill=color, outline=(140, 168, 224, 120))
+    banner = Image.new("RGBA", (right - left + 80, DAY_BANNER_HEIGHT + 10), (0, 0, 0, 0))
+    bd = ImageDraw.Draw(banner)
+    local_poly = [
+        (0, DAY_BANNER_HEIGHT + 10),
+        (46, 0),
+        (right - left + 34, 0),
+        (right - left, DAY_BANNER_HEIGHT + 10),
+    ]
+    fill = hex_to_rgb(color) + (188,)
+    bd.polygon(local_poly, fill=fill, outline=(200, 220, 255, 80))
+    gloss = Image.new("RGBA", banner.size, (255, 255, 255, 0))
+    gd = ImageDraw.Draw(gloss)
+    gd.polygon(
+        [(28, 10), (56, 3), (banner.width - 120, 3), (banner.width - 140, 22), (54, 22)],
+        fill=(255, 255, 255, 36),
+    )
+    banner.alpha_composite(gloss)
+    base.alpha_composite(banner, (left, y))
     draw.line((24, y + DAY_BANNER_HEIGHT // 2, left + 8, y + DAY_BANNER_HEIGHT // 2), fill=(255, 255, 255, 130), width=1)
     draw.line((right - 8, y + DAY_BANNER_HEIGHT // 2, WIDTH - 24, y + DAY_BANNER_HEIGHT // 2), fill=(255, 255, 255, 130), width=1)
-    centered_text(draw, (left + right) // 2, y + DAY_BANNER_HEIGHT // 2 - 2, label.upper(), FONT_DAY, COLORS["white"])
+    centered_text_with_shadow(draw, (left + right) // 2, y + DAY_BANNER_HEIGHT // 2 - 2, label.upper(), FONT_DAY, COLORS["white"])
     return y + DAY_BANNER_HEIGHT + DAY_BANNER_GAP
 
 
@@ -367,12 +464,24 @@ def draw_match_card(base: Image.Image, draw: ImageDraw.ImageDraw, y: int, match,
     time_box = (42, y + 30, 42 + TIME_BOX_WIDTH, y + MATCH_CARD_HEIGHT - 30)
     draw.rounded_rectangle(time_box, radius=22, fill=(10, 24, 34, 205), outline=(58, 93, 139, 140), width=1)
     time_chip = (58, y + 48, 208, y + 120)
-    draw.rounded_rectangle(time_chip, radius=16, fill=accent_color)
-    centered_text(draw, (time_chip[0] + time_chip[2]) // 2, (time_chip[1] + time_chip[3]) // 2 - 2, format_local_time(match.local_date), FONT_TIME, COLORS["white"])
+    chip_fill = (*hex_to_rgb(accent_color), 175)
+    chip = Image.new("RGBA", (time_chip[2] - time_chip[0], time_chip[3] - time_chip[1]), (0, 0, 0, 0))
+    cd = ImageDraw.Draw(chip)
+    cd.rounded_rectangle((0, 0, chip.width - 1, chip.height - 1), radius=16, fill=chip_fill, outline=(255, 255, 255, 48), width=1)
+    cd.rounded_rectangle((6, 6, chip.width - 6, chip.height // 2), radius=12, fill=(255, 255, 255, 18))
+    base.alpha_composite(chip, (time_chip[0], time_chip[1]))
+    centered_text_with_shadow(
+        draw,
+        (time_chip[0] + time_chip[2]) // 2,
+        (time_chip[1] + time_chip[3]) // 2 - 2,
+        format_local_time(match.local_date),
+        FONT_TIME,
+        COLORS["white"],
+    )
 
     draw_location_icon(draw, 141, y + 148)
 
-    city_font = load_font(16, bold=True)
+    city_font = load_condensed_bold(16)
     stadium_font = load_font(14)
     city_lines = wrap_multiline(draw, (match.city or "").upper(), city_font, 154, 2)
     city_y = y + 180
@@ -389,7 +498,7 @@ def draw_match_card(base: Image.Image, draw: ImageDraw.ImageDraw, y: int, match,
     inner_left = 242
     inner_right = WIDTH - 42
     inner_box = (inner_left, y + 10, inner_right, y + MATCH_CARD_HEIGHT - 10)
-    draw.rounded_rectangle(inner_box, radius=24, fill=(4, 10, 16, 125), outline=(255, 214, 137, 90), width=1)
+    draw_glass_box(base, inner_box, 24, (4, 10, 16, 106), (255, 214, 137, 110), gloss_alpha=18)
 
     flag_w, flag_h = 176, 122
     left_flag = fit_flag(match.home_country, (flag_w, flag_h))
@@ -403,13 +512,23 @@ def draw_match_card(base: Image.Image, draw: ImageDraw.ImageDraw, y: int, match,
 
     team_font_left = fit_font(draw, (match.home_team or "").upper(), 240, 44)
     team_font_right = fit_font(draw, (match.away_team or "").upper(), 240, 44)
-    centered_text(draw, 390, y + 188, (match.home_team or "").upper(), team_font_left, COLORS["white"])
-    centered_text(draw, 810, y + 188, (match.away_team or "").upper(), team_font_right, COLORS["white"])
+    centered_text_with_shadow(draw, 390, y + 188, (match.home_team or "").upper(), team_font_left, COLORS["white"])
+    centered_text_with_shadow(draw, 810, y + 188, (match.away_team or "").upper(), team_font_right, COLORS["white"])
 
     group_text = (match.group or match.stage).upper()
     group_box = (510, y + 168, 650, y + 206)
-    draw.rounded_rectangle(group_box, radius=14, outline=hex_to_rgb(accent_color) + (255,), fill=(2, 9, 15, 150), width=2)
-    centered_text(draw, (group_box[0] + group_box[2]) // 2, (group_box[1] + group_box[3]) // 2 - 1, group_text, FONT_GROUP, COLORS["white"])
+    group_chip = Image.new("RGBA", (group_box[2] - group_box[0], group_box[3] - group_box[1]), (0, 0, 0, 0))
+    gd = ImageDraw.Draw(group_chip)
+    gd.rounded_rectangle(
+        (0, 0, group_chip.width - 1, group_chip.height - 1),
+        radius=14,
+        outline=hex_to_rgb(accent_color) + (245,),
+        fill=(2, 9, 15, 118),
+        width=2,
+    )
+    gd.rounded_rectangle((5, 5, group_chip.width - 5, group_chip.height // 2), radius=11, fill=(*hex_to_rgb(accent_color), 34))
+    base.alpha_composite(group_chip, (group_box[0], group_box[1]))
+    centered_text_with_shadow(draw, (group_box[0] + group_box[2]) // 2, (group_box[1] + group_box[3]) // 2 - 1, group_text, FONT_GROUP, COLORS["white"])
 
     dot_y = y + MATCH_CARD_HEIGHT - 6
     draw.line((486, dot_y, 560, dot_y), fill=(214, 211, 204, 110), width=1)
