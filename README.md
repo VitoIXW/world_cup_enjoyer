@@ -50,6 +50,7 @@ Copia `.env.example` a `.env` y rellena:
 - `TELEGRAM_CHAT_ID` opcional, para sembrar tu chat inicial
 - `WORLD_CUP_TIMEZONE`
 - `WORLD_CUP_HOURS`
+- `WORLD_CUP_SEND_MODE` con `text`, `image` o `both`
 
 El bot ahora mantiene suscriptores en archivos locales ignorados por Git:
 
@@ -72,6 +73,25 @@ Enviar mensaje:
 
 ```bash
 python3 scripts/telegram_daily_bot.py
+```
+
+Enviar imagen en vez de texto:
+
+```bash
+python3 scripts/telegram_daily_bot.py --send-mode image
+```
+
+Enviar ambos:
+
+```bash
+python3 scripts/telegram_daily_bot.py --send-mode both
+```
+
+Previsualizar imagen:
+
+```bash
+python3 scripts/telegram_daily_bot.py --dry-run
+python3 scripts/render_matches_image.py --output /tmp/world_cup_matches.png
 ```
 
 Wrapper pensado para `cron`:

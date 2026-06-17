@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 import urllib.parse
@@ -16,6 +17,7 @@ from fifa_upcoming_matches import (
     render_telegram_message,
     filter_upcoming_matches,
 )
+from render_matches_image import build_image
 
 DATA_DIR = Path(__file__).resolve().parent.parent / "data"
 SUBSCRIBERS_FILE = DATA_DIR / "telegram_subscribers.json"
@@ -47,6 +49,42 @@ def send_telegram_message(token: str, chat_id: str, text: str) -> dict:
             "parse_mode": "Markdown",
         },
     )
+
+
+def send_telegram_photo(token: str, chat_id: str, photo_path: Path, caption: str | None = None) -> dict:
+    boundary = "worldcupbotboundary"
+    chunks: list[bytes] = []
+
+    def add_field(name: str, value: str) -> None:
+        chunks.append(f"--{boundary}\r\n".encode())
+        chunks.append(
+            f'Content-Disposition: form-data; name="{name}"\r\n\r\n{value}\r\n'.encode()
+        )
+
+    add_field("chat_id", chat_id)
+    if caption:
+        add_field("caption", caption)
+        add_field("parse_mode", "Markdown")
+
+    chunks.append(f"--{boundary}\r\n".encode())
+    chunks.append(
+        (
+            f'Content-Disposition: form-data; name="photo"; filename="{photo_path.name}"\r\n'
+            "Content-Type: image/png\r\n\r\n"
+        ).encode()
+    )
+    chunks.append(photo_path.read_bytes())
+    chunks.append(f"\r\n--{boundary}--\r\n".encode())
+    body = b"".join(chunks)
+
+    request = Request(
+        f"https://api.telegram.org/bot{token}/sendPhoto",
+        data=body,
+        headers={"Content-Type": f"multipart/form-data; boundary={boundary}"},
+        method="POST",
+    )
+    with urlopen(request, timeout=60) as response:
+        return json.load(response)
 
 
 def ensure_data_dir() -> None:
@@ -177,6 +215,12 @@ def main() -> int:
         action="store_true",
         help="No envía a Telegram; solo imprime el mensaje.",
     )
+    parser.add_argument(
+        "--send-mode",
+        choices=("text", "image", "both"),
+        default=os.environ.get("WORLD_CUP_SEND_MODE", "text"),
+        help="Formato a enviar por Telegram.",
+    )
     args = parser.parse_args()
 
     token = os.environ.get("TELEGRAM_BOT_TOKEN", "")
@@ -186,9 +230,14 @@ def main() -> int:
     matches = fetch_matches(metadata["season_id"])
     upcoming = filter_upcoming_matches(matches, args.hours, args.timezone)
     message = render_telegram_message(upcoming, args.hours, args.timezone)
+    header_image_url = metadata.get("page", {}).get("meta", {}).get("image")
+    image = build_image(upcoming, args.hours, args.timezone, header_image_url=header_image_url)
 
     if args.dry_run:
         print(message)
+        dry_run_path = Path("/tmp/world_cup_matches_preview.png")
+        image.save(dry_run_path, format="PNG")
+        print(f"\nImagen guardada en: {dry_run_path}")
         return 0
 
     if not token:
@@ -210,10 +259,24 @@ def main() -> int:
     print(f"Suscriptores sincronizados: {synced}")
     print(f"Destinatarios activos: {len(recipients)}")
 
-    for recipient in recipients:
-        result = send_telegram_message(token, recipient, message)
-        print(f"Mensaje enviado a chat_id={recipient}")
-        print(json.dumps(result, ensure_ascii=False))
+    with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
+        image_path = Path(tmp.name)
+    image.save(image_path, format="PNG")
+
+    try:
+        for recipient in recipients:
+            if args.send_mode in ("text", "both"):
+                result = send_telegram_message(token, recipient, message)
+                print(f"Texto enviado a chat_id={recipient}")
+                print(json.dumps(result, ensure_ascii=False))
+            if args.send_mode in ("image", "both"):
+                caption = None if args.send_mode == "image" else "Resumen visual del dia"
+                result = send_telegram_photo(token, recipient, image_path, caption=caption)
+                print(f"Imagen enviada a chat_id={recipient}")
+                print(json.dumps(result, ensure_ascii=False))
+    finally:
+        if image_path.exists():
+            image_path.unlink()
     return 0
 
 

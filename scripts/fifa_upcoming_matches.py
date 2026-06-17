@@ -220,6 +220,27 @@ def format_local_time(local_date: str) -> str:
     return dt.strftime("%H:%M")
 
 
+def split_matches_by_local_day(matches: list[MatchSummary]) -> list[tuple[str, list[MatchSummary]]]:
+    grouped: list[tuple[str, list[MatchSummary]]] = []
+    current_day = None
+    current_matches: list[MatchSummary] = []
+
+    for match in matches:
+        day_label = format_local_day(match.local_date)
+        if day_label != current_day:
+            if current_day is not None:
+                grouped.append((current_day, current_matches))
+            current_day = day_label
+            current_matches = [match]
+        else:
+            current_matches.append(match)
+
+    if current_day is not None:
+        grouped.append((current_day, current_matches))
+
+    return grouped
+
+
 def render_text(
     matches: list[MatchSummary],
     hours: int,
@@ -261,28 +282,24 @@ def render_telegram_message(
         "",
     ]
 
-    current_day = None
-    for match in matches:
-        day_label = format_local_day(match.local_date)
-        if day_label != current_day:
-            if current_day is not None:
-                lines.append("")
-            lines.append(f"*{day_label}*")
-            current_day = day_label
+    for index, (day_label, day_matches) in enumerate(split_matches_by_local_day(matches)):
+        if index > 0:
+            lines.append("")
+        lines.append(f"*{day_label}*")
+        for match in day_matches:
+            phase = match.group or match.stage
+            home_flag = country_flag_from_fifa_code(match.home_country)
+            away_flag = country_flag_from_fifa_code(match.away_country)
+            home_label = " ".join(part for part in [home_flag, match.home_team] if part)
+            away_label = " ".join(part for part in [away_flag, match.away_team] if part)
+            lines.append(
+                f"• *{format_local_time(match.local_date)}*  {home_label} vs {away_label}"
+            )
+            lines.append(f"  {phase}")
 
-        phase = match.group or match.stage
-        home_flag = country_flag_from_fifa_code(match.home_country)
-        away_flag = country_flag_from_fifa_code(match.away_country)
-        home_label = " ".join(part for part in [home_flag, match.home_team] if part)
-        away_label = " ".join(part for part in [away_flag, match.away_team] if part)
-        lines.append(
-            f"• *{format_local_time(match.local_date)}*  {home_label} vs {away_label}"
-        )
-        lines.append(f"  {phase}")
-
-        place_parts = [part for part in [match.city, match.stadium] if part]
-        if place_parts:
-            lines.append(f"  📍 {' - '.join(place_parts)}")
+            place_parts = [part for part in [match.city, match.stadium] if part]
+            if place_parts:
+                lines.append(f"  📍 {' - '.join(place_parts)}")
 
     return "\n".join(lines)
 
