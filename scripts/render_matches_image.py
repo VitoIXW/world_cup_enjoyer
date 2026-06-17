@@ -33,8 +33,9 @@ MATCH_CARD_HEIGHT = 246
 MATCH_CARD_GAP = 18
 TIME_BOX_WIDTH = 198
 RESAMPLE_LANCZOS = getattr(getattr(Image, "Resampling", Image), "LANCZOS")
-HEADER_CUP_PATH = Path(__file__).resolve().parent.parent / "tmp" / "copa2.png"
-STADIUM_BG_PATH = Path(__file__).resolve().parent.parent / "tmp" / "estadio.jpg"
+ASSETS_DIR = Path(__file__).resolve().parent.parent / "assets"
+HEADER_CUP_PATH = ASSETS_DIR / "header-cup.png"
+STADIUM_BG_PATH = ASSETS_DIR / "stadium-bg.jpg"
 
 
 COLORS = {

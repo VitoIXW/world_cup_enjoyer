@@ -94,6 +94,13 @@ python3 scripts/telegram_daily_bot.py --dry-run
 python3 scripts/render_matches_image.py --output /tmp/world_cup_matches.png
 ```
 
+Recursos visuales necesarios para el render:
+
+- `assets/header-cup.png`
+- `assets/stadium-bg.jpg`
+
+La carpeta `tmp/` queda solo para pruebas locales y ya no es necesaria para que el bot funcione.
+
 Wrapper pensado para `cron`:
 
 ```bash
