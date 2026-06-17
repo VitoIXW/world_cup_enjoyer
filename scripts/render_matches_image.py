@@ -181,6 +181,65 @@ def draw_glass_box(
     base.alpha_composite(panel, (box[0], box[1]))
 
 
+def gradient_color(start: tuple[int, int, int], end: tuple[int, int, int], t: float) -> tuple[int, int, int]:
+    return (
+        int(start[0] + (end[0] - start[0]) * t),
+        int(start[1] + (end[1] - start[1]) * t),
+        int(start[2] + (end[2] - start[2]) * t),
+    )
+
+
+def draw_lit_chip(
+    base: Image.Image,
+    box: tuple[int, int, int, int],
+    radius: int,
+    accent_color: str,
+    outline_alpha: int = 170,
+    glow_alpha: int = 84,
+) -> None:
+    width = box[2] - box[0]
+    height = box[3] - box[1]
+    chip = Image.new("RGBA", (width, height), (0, 0, 0, 0))
+    mask = rounded_mask((width, height), radius)
+    start = gradient_color(hex_to_rgb(accent_color), (6, 18, 44), 0.45)
+    end = gradient_color(hex_to_rgb(accent_color), (3, 10, 26), 0.8)
+
+    for x in range(width):
+        xt = x / max(1, width - 1)
+        col = gradient_color(start, end, xt)
+        alpha = int(210 - 28 * xt)
+        ImageDraw.Draw(chip).line((x, 0, x, height), fill=(*col, alpha))
+
+    top_gloss = Image.new("RGBA", (width, height), (0, 0, 0, 0))
+    gd = ImageDraw.Draw(top_gloss)
+    gd.rounded_rectangle((6, 5, width - 6, height // 2), radius=max(8, radius - 6), fill=(255, 255, 255, 26))
+    chip.alpha_composite(top_gloss)
+
+    glow = Image.new("RGBA", (width, height), (0, 0, 0, 0))
+    glow_draw = ImageDraw.Draw(glow)
+    glow_draw.ellipse(
+        (width * 0.2, height * 0.05, width * 0.88, height * 1.05),
+        fill=(*hex_to_rgb(accent_color), glow_alpha),
+    )
+    glow = glow.filter(ImageFilter.GaussianBlur(12))
+    chip.alpha_composite(glow)
+
+    line = Image.new("RGBA", (width, height), (0, 0, 0, 0))
+    ld = ImageDraw.Draw(line)
+    ld.rounded_rectangle(
+        (0, 0, width - 1, height - 1),
+        radius=radius,
+        outline=hex_to_rgb(accent_color) + (outline_alpha,),
+        width=2,
+    )
+    ld.line((14, 10, width - 14, 10), fill=(255, 255, 255, 54), width=1)
+    chip.alpha_composite(line)
+
+    clipped = Image.new("RGBA", (width, height), (0, 0, 0, 0))
+    clipped.paste(chip, (0, 0), mask)
+    base.alpha_composite(clipped, (box[0], box[1]))
+
+
 def create_base(height: int) -> Image.Image:
     image = Image.new("RGBA", (WIDTH, height), COLORS["bg_top"])
     draw = ImageDraw.Draw(image)
@@ -440,15 +499,30 @@ def draw_day_banner(base: Image.Image, draw: ImageDraw.ImageDraw, y: int, label:
         (right - left + 34, 0),
         (right - left, DAY_BANNER_HEIGHT + 10),
     ]
-    fill = hex_to_rgb(color) + (188,)
-    bd.polygon(local_poly, fill=fill, outline=(200, 220, 255, 80))
-    gloss = Image.new("RGBA", banner.size, (255, 255, 255, 0))
-    gd = ImageDraw.Draw(gloss)
-    gd.polygon(
-        [(28, 10), (56, 3), (banner.width - 120, 3), (banner.width - 140, 22), (54, 22)],
-        fill=(255, 255, 255, 36),
+    start = gradient_color(hex_to_rgb(color), (8, 25, 58), 0.38)
+    end = gradient_color(hex_to_rgb(color), (4, 14, 34), 0.7)
+    for x in range(banner.width):
+        xt = x / max(1, banner.width - 1)
+        col = gradient_color(start, end, xt)
+        bd.line((x, 0, x, banner.height), fill=(*col, 228))
+    mask = Image.new("L", banner.size, 0)
+    md = ImageDraw.Draw(mask)
+    md.polygon(local_poly, fill=255)
+    banner.putalpha(mask)
+    edge = Image.new("RGBA", banner.size, (0, 0, 0, 0))
+    ed = ImageDraw.Draw(edge)
+    ed.polygon(local_poly, outline=(225, 240, 255, 108), width=2)
+    ed.line((64, 14, banner.width - 92, 14), fill=(255, 255, 255, 74), width=1)
+    ed.polygon(
+        [(26, 10), (58, 2), (banner.width - 112, 2), (banner.width - 140, 22), (54, 22)],
+        fill=(255, 255, 255, 32),
     )
-    banner.alpha_composite(gloss)
+    banner.alpha_composite(edge)
+    center_glow = Image.new("RGBA", banner.size, (0, 0, 0, 0))
+    cgd = ImageDraw.Draw(center_glow)
+    cgd.ellipse((banner.width * 0.22, -12, banner.width * 0.82, banner.height + 34), fill=(*hex_to_rgb(color), 70))
+    center_glow = center_glow.filter(ImageFilter.GaussianBlur(16))
+    banner.alpha_composite(center_glow)
     base.alpha_composite(banner, (left, y))
     draw.line((24, y + DAY_BANNER_HEIGHT // 2, left + 8, y + DAY_BANNER_HEIGHT // 2), fill=(255, 255, 255, 130), width=1)
     draw.line((right - 8, y + DAY_BANNER_HEIGHT // 2, WIDTH - 24, y + DAY_BANNER_HEIGHT // 2), fill=(255, 255, 255, 130), width=1)
@@ -464,12 +538,7 @@ def draw_match_card(base: Image.Image, draw: ImageDraw.ImageDraw, y: int, match,
     time_box = (42, y + 30, 42 + TIME_BOX_WIDTH, y + MATCH_CARD_HEIGHT - 30)
     draw.rounded_rectangle(time_box, radius=22, fill=(10, 24, 34, 205), outline=(58, 93, 139, 140), width=1)
     time_chip = (58, y + 48, 208, y + 120)
-    chip_fill = (*hex_to_rgb(accent_color), 175)
-    chip = Image.new("RGBA", (time_chip[2] - time_chip[0], time_chip[3] - time_chip[1]), (0, 0, 0, 0))
-    cd = ImageDraw.Draw(chip)
-    cd.rounded_rectangle((0, 0, chip.width - 1, chip.height - 1), radius=16, fill=chip_fill, outline=(255, 255, 255, 48), width=1)
-    cd.rounded_rectangle((6, 6, chip.width - 6, chip.height // 2), radius=12, fill=(255, 255, 255, 18))
-    base.alpha_composite(chip, (time_chip[0], time_chip[1]))
+    draw_lit_chip(base, time_chip, 16, accent_color, outline_alpha=190, glow_alpha=96)
     centered_text_with_shadow(
         draw,
         (time_chip[0] + time_chip[2]) // 2,
@@ -517,17 +586,7 @@ def draw_match_card(base: Image.Image, draw: ImageDraw.ImageDraw, y: int, match,
 
     group_text = (match.group or match.stage).upper()
     group_box = (510, y + 168, 650, y + 206)
-    group_chip = Image.new("RGBA", (group_box[2] - group_box[0], group_box[3] - group_box[1]), (0, 0, 0, 0))
-    gd = ImageDraw.Draw(group_chip)
-    gd.rounded_rectangle(
-        (0, 0, group_chip.width - 1, group_chip.height - 1),
-        radius=14,
-        outline=hex_to_rgb(accent_color) + (245,),
-        fill=(2, 9, 15, 118),
-        width=2,
-    )
-    gd.rounded_rectangle((5, 5, group_chip.width - 5, group_chip.height // 2), radius=11, fill=(*hex_to_rgb(accent_color), 34))
-    base.alpha_composite(group_chip, (group_box[0], group_box[1]))
+    draw_lit_chip(base, group_box, 14, accent_color, outline_alpha=220, glow_alpha=60)
     centered_text_with_shadow(draw, (group_box[0] + group_box[2]) // 2, (group_box[1] + group_box[3]) // 2 - 1, group_text, FONT_GROUP, COLORS["white"])
 
     dot_y = y + MATCH_CARD_HEIGHT - 6
